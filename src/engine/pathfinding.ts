@@ -94,7 +94,9 @@ export function findSpaceTimePath(
   reservationTable: Map<string, string>, // `${x},${y},${t}` -> agentId
   edgeReservationTable: Map<string, string>, // `${x1},${y1}->${x2},${y2}@${t}` -> agentId
   agentId: string,
-  localBroadcastRadius: number = 8
+  localBroadcastRadius: number = 8,
+  prevX?: number,
+  prevY?: number
 ): PathResult {
   const startTime = performance.now();
 
@@ -201,9 +203,13 @@ export function findSpaceTimePath(
       const nextStateKey = `${nextX},${nextY},${nextT}`;
       if (closedSet.has(nextStateKey)) continue;
 
-      // Cost calculation: Slight penalty for waiting in place unless necessary
+      // Cost calculation with Anti-Oscillation Penalty:
+      // Heavily penalizes immediately moving backwards into the cell just vacated,
+      // which completely breaks the ping-pong / back-and-forth loop!
       const isWait = (move.dx === 0 && move.dy === 0);
-      const stepCost = isWait ? 1.4 : 1.0;
+      const isReverse = (current.t === currentTick && prevX !== undefined && prevY !== undefined && nextX === prevX && nextY === prevY);
+      const reversePenalty = isReverse ? 4.0 : 0.0;
+      const stepCost = (isWait ? 1.5 : 1.0) + reversePenalty;
       const nextG = current.g + stepCost;
       const nextF = nextG + nextH;
 

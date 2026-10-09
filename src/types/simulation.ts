@@ -18,9 +18,22 @@ export type AgentState =
   | 'TOWING_RECOVERY'
   | 'PARKED_REPAIR';
 
+export type WarehouseLayoutId = 'WH_1' | 'WH_2' | 'WH_3' | 'WH_4';
+
 export type TaskPriority = 'STANDARD' | 'EXPRESS';
 
 export type ToolMode = 'INSPECT' | 'OBSTACLE' | 'KILL';
+
+export interface DroppedParcel {
+  id: string;
+  x: number;
+  y: number;
+  originalTaskId: string;
+  priority: TaskPriority;
+  dropoffStation: { x: number; y: number };
+  createdAtTick: number;
+  claimedByAgentId?: string;
+}
 
 export interface Task {
   id: string;
@@ -57,7 +70,15 @@ export interface Agent {
   towedByAgentId?: string;
   needsRecovery?: boolean;
   rescueAssignedAgentId?: string;
+  desaturation?: number; // 0 = full vibrant color, 1 = pale dead grey
+  repairCountdownSec?: number; // 5.0 seconds countdown while charging
+  isNearHazard?: boolean; // proximity to peer or front obstacle
+  prevX?: number; // Previous cell coordinate to suppress back-and-forth oscillation
+  prevY?: number;
+  recentPositions?: { x: number; y: number }[]; // Position history to detect and break loops
 }
+
+export type CanvasViewMode = '2D' | '3D';
 
 export interface SpaceTimeSlot {
   x: number;
@@ -96,6 +117,8 @@ export interface TelemetryData {
   blockedAlertMessage?: string;
   stationQueues: Record<string, number>;
   totalQueuedParcels: number;
+  activeWarehouse: WarehouseLayoutId;
+  droppedParcelsCount: number;
 }
 
 export interface GridConfig {

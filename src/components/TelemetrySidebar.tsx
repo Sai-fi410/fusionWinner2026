@@ -245,6 +245,17 @@ export const TelemetrySidebar: React.FC<TelemetrySidebarProps> = ({
               <span>{failedCount}</span>
             </div>
           )}
+
+          {/* DROPPED CRATES AWAITING SALVAGE */}
+          {telemetry.droppedParcelsCount > 0 && (
+            <div className="flex justify-between items-center text-amber-800 font-bold bg-amber-50 px-2 py-1 rounded-xl border border-amber-200">
+              <span className="flex items-center gap-1.5 font-medium text-[11px]">
+                <Package className="w-3 h-3 text-amber-600" />
+                Dropped Crate (Salvage)
+              </span>
+              <span>{telemetry.droppedParcelsCount}</span>
+            </div>
+          )}
         </div>
       </div>
 

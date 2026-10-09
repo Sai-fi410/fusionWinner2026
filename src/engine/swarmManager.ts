@@ -1,11 +1,14 @@
-import { Agent, CellType, Task, TaskPriority, TelemetryData, SystemMode, ArchitectureMode, CellInspectionInfo } from '../types/simulation';
-import { createInitialWarehouseLayout, GRID_WIDTH, GRID_HEIGHT, isCellTraversable, manhattanDistance, WarehouseLayout } from './grid';
+import { Agent, CellType, Task, TaskPriority, TelemetryData, SystemMode, ArchitectureMode, CellInspectionInfo, WarehouseLayoutId, DroppedParcel } from '../types/simulation';
+import { createInitialWarehouseLayout, getWarehouseLayout, GRID_WIDTH, GRID_HEIGHT, isCellTraversable, manhattanDistance, WarehouseLayout } from './grid';
 import { findSpaceTimePath } from './pathfinding';
+import { soundEffects } from '../utils/audio';
 
 export class SwarmManager {
   public layout: WarehouseLayout;
+  public activeWarehouseId: WarehouseLayoutId = 'WH_1';
   public agents: Agent[] = [];
   public tasks: Task[] = [];
+  public droppedParcels: DroppedParcel[] = [];
   public currentTick: number = 0;
   public systemMode: SystemMode = 'SIMULATION';
   public architectureMode: ArchitectureMode = 'DECENTRALIZED';
@@ -56,6 +59,55 @@ export class SwarmManager {
     }
 
     this.setFleetSize(initialAgentCount);
+  }
+
+  /**
+   * Dynamically switch between 4 warehouse structures
+   */
+  public switchWarehouse(layoutId: WarehouseLayoutId) {
+    this.activeWarehouseId = layoutId;
+    this.layout = getWarehouseLayout(layoutId);
+    this.reservationTable.clear();
+    this.edgeReservationTable.clear();
+    this.droppedParcels = [];
+    this.tasks = [];
+    this.stationQueues.clear();
+    this.dropBayCounts.clear();
+    this.blockedAgentsSet.clear();
+    this.isRouteFullyBlocked = false;
+    this.blockedAlertMessage = undefined;
+
+    for (const pick of this.layout.pickStations) {
+      this.stationQueues.set(`${pick.x},${pick.y}`, this.customParcelsPerStation);
+    }
+    for (const drop of this.layout.dropBays) {
+      this.dropBayCounts.set(`${drop.x},${drop.y}`, 0);
+    }
+
+    // Reposition agents onto new traversable spawn locations
+    for (let i = 0; i < this.agents.length; i++) {
+      const agent = this.agents[i];
+      const spawn = this.findFreeSpawnCoordinate();
+      agent.x = spawn.x;
+      agent.y = spawn.y;
+      agent.subX = spawn.x;
+      agent.subY = spawn.y;
+      agent.path = [];
+      agent.state = 'IDLE';
+      agent.currentTaskId = undefined;
+      agent.targetX = undefined;
+      agent.targetY = undefined;
+      agent.needsRecovery = false;
+      agent.rescueAssignedAgentId = undefined;
+      agent.towedAgentId = undefined;
+      agent.towedByAgentId = undefined;
+      agent.desaturation = 0;
+      agent.repairCountdownSec = 0;
+      agent.isRouteBlocked = false;
+      agent.isNearHazard = false;
+    }
+
+    this.generateTasksForQueue();
   }
 
   /**
@@ -162,7 +214,7 @@ export class SwarmManager {
     // 1. Spontaneous Task Generation if queues or tasks are low
     this.generatePeriodicTasks();
 
-    // 2. Decentralized Contract Net Protocol (CNP) Auction Resolution
+    // 2. Decentralized Contract Net Protocol (CNP) Auction Resolution (including dropped parcels salvage)
     this.resolveContractNetAuctions();
 
     // 3. Agent State Machine & Motion Update
@@ -170,8 +222,48 @@ export class SwarmManager {
       this.updateAgentState(agent);
     }
 
-    // 4. Update Congestion Heatmap & Throughput
+    // 4. Update proximity and forward obstacle hazards for rippling comm ring
+    this.updateAgentHazardStatus();
+
+    // 5. Update Congestion Heatmap & Throughput
     this.updateMetrics();
+  }
+
+  private updateAgentHazardStatus() {
+    for (const agent of this.agents) {
+      if (agent.state === 'CRITICAL_FAILURE' || agent.state === 'PARKED_REPAIR') {
+        agent.isNearHazard = false;
+        continue;
+      }
+
+      let isHazard = false;
+      // Proximity to other robots
+      for (const other of this.agents) {
+        if (other.id !== agent.id) {
+          const d = Math.hypot(other.x - agent.x, other.y - agent.y);
+          if (d <= 3.2) {
+            isHazard = true;
+            break;
+          }
+        }
+      }
+
+      // Proximity to forward obstacle along heading
+      if (!isHazard && agent.heading !== undefined) {
+        const cosH = Math.cos(agent.heading);
+        const sinH = Math.sin(agent.heading);
+        const f1x = Math.round(agent.x + cosH);
+        const f1y = Math.round(agent.y + sinH);
+        const f2x = Math.round(agent.x + 2 * cosH);
+        const f2y = Math.round(agent.y + 2 * sinH);
+
+        if (!isCellTraversable(this.layout.grid, f1x, f1y) || !isCellTraversable(this.layout.grid, f2x, f2y)) {
+          isHazard = true;
+        }
+      }
+
+      agent.isNearHazard = isHazard;
+    }
   }
 
   private pruneStaleReservations() {
@@ -264,6 +356,34 @@ export class SwarmManager {
   }
 
   private resolveContractNetAuctions() {
+    // 1. HIGHEST PRIORITY: Salvage dropped parcels from fallen robots
+    for (const dp of this.droppedParcels) {
+      if (dp.claimedByAgentId) continue;
+      let bestSalvager: Agent | null = null;
+      let minSalvageDist = Infinity;
+
+      for (const agent of this.agents) {
+        if (agent.state !== 'IDLE' || agent.battery < 20) continue;
+        const d = manhattanDistance(agent.x, agent.y, dp.x, dp.y);
+        if (d < minSalvageDist) {
+          minSalvageDist = d;
+          bestSalvager = agent;
+        }
+      }
+
+      if (bestSalvager) {
+        dp.claimedByAgentId = bestSalvager.id;
+        bestSalvager.currentTaskId = dp.originalTaskId;
+        bestSalvager.priority = dp.priority;
+        bestSalvager.targetX = dp.x;
+        bestSalvager.targetY = dp.y;
+        bestSalvager.state = 'EN_ROUTE_PICKUP';
+        bestSalvager.commPulseRadius = 1;
+        this.replanAgentPath(bestSalvager, dp.x, dp.y);
+      }
+    }
+
+    // 2. Standard Order Auctions
     const unassignedTasks = this.tasks.filter(t => t.status === 'PENDING_AUCTION');
 
     for (const task of unassignedTasks) {
@@ -302,7 +422,7 @@ export class SwarmManager {
   }
 
   /**
-   * Intelligent Space-Time Path Planning
+   * Intelligent Space-Time Path Planning with Anti-Oscillation Safeguard
    */
   public replanAgentPath(agent: Agent, goalX: number, goalY: number) {
     this.clearAgentReservations(agent.id);
@@ -321,7 +441,10 @@ export class SwarmManager {
       horizon,
       this.reservationTable,
       this.edgeReservationTable,
-      agent.id
+      agent.id,
+      8,
+      agent.prevX,
+      agent.prevY
     );
 
     agent.lastRerouteLatencyMs = result.latencyMs;
@@ -372,6 +495,34 @@ export class SwarmManager {
 
   private updateAgentState(agent: Agent) {
     if (agent.state === 'CRITICAL_FAILURE') {
+      return;
+    }
+
+    // 5-SECOND CHARGING & COLOR RECOVERY ON POWER STATION
+    if (agent.state === 'PARKED_REPAIR') {
+      if (agent.repairCountdownSec === undefined || agent.repairCountdownSec <= 0) {
+        agent.repairCountdownSec = 5.0;
+      }
+      // Decrement countdown: 120ms tick = 0.12s
+      agent.repairCountdownSec = Math.max(0, agent.repairCountdownSec - (this.tickDurationMs / 1000));
+      // Smoothly restore color: desaturation goes from 1.0 (dead grey) to 0.0 (full vibrant color)
+      agent.desaturation = Math.max(0, agent.repairCountdownSec / 5.0);
+      agent.battery = Math.min(100, Math.round(((5.0 - agent.repairCountdownSec) / 5.0) * 100));
+
+      if (agent.repairCountdownSec <= 0) {
+        // 5 seconds completed! Robot gets full color back and gets back to work!
+        agent.repairCountdownSec = 0;
+        agent.desaturation = 0;
+        agent.battery = 100;
+        agent.state = 'IDLE';
+        agent.needsRecovery = false;
+        agent.towedByAgentId = undefined;
+        agent.rescueAssignedAgentId = undefined;
+        agent.targetX = undefined;
+        agent.targetY = undefined;
+        agent.path = [];
+        soundEffects.playReviveSound();
+      }
       return;
     }
 
@@ -436,10 +587,26 @@ export class SwarmManager {
       // Check if another agent is currently occupying nextStep.x, nextStep.y
       const occupant = this.agents.find(a => a.id !== agent.id && a.x === nextStep.x && a.y === nextStep.y);
       if (occupant) {
-        // Wait or replan around
-        agent.yieldWaitTicks = 1;
-        if (agent.targetX !== undefined && agent.targetY !== undefined) {
-          this.replanAgentPath(agent, agent.targetX, agent.targetY);
+        // Asymmetric priority check to eliminate back-and-forth corridor ping-pong:
+        // Priority 1: Towing Rescuer has highest right-of-way
+        // Priority 2: Loaded robot carrying parcel has right-of-way over empty transit robot
+        // Priority 3: Tie-break deterministically by ID
+        const agentHasRightOfWay = (
+          (agent.state === 'TOWING_RECOVERY') ||
+          (agent.state === 'CARRYING_TASK' && occupant.state !== 'CARRYING_TASK' && occupant.state !== 'TOWING_RECOVERY') ||
+          (agent.priority === 'EXPRESS' && occupant.priority !== 'EXPRESS') ||
+          (agent.id < occupant.id)
+        );
+
+        if (!agentHasRightOfWay) {
+          // Lower-priority agent yields with randomized back-off to break resonance
+          agent.yieldWaitTicks = 2 + Math.floor(Math.random() * 3);
+          if (agent.targetX !== undefined && agent.targetY !== undefined) {
+            this.replanAgentPath(agent, agent.targetX, agent.targetY);
+          }
+        } else {
+          // Higher-priority agent holds course
+          agent.yieldWaitTicks = 1;
         }
         return;
       }
@@ -448,10 +615,34 @@ export class SwarmManager {
       agent.path.shift();
       const prevX = agent.x;
       const prevY = agent.y;
+      agent.prevX = prevX;
+      agent.prevY = prevY;
       agent.x = nextStep.x;
       agent.y = nextStep.y;
       agent.subX = nextStep.x;
       agent.subY = nextStep.y;
+
+      // Loop & Oscillation Detector: Detect A -> B -> A -> B pattern
+      if (!agent.recentPositions) agent.recentPositions = [];
+      agent.recentPositions.push({ x: agent.x, y: agent.y });
+      if (agent.recentPositions.length > 6) agent.recentPositions.shift();
+
+      if (agent.recentPositions.length >= 4) {
+        const p1 = agent.recentPositions[agent.recentPositions.length - 1];
+        const p2 = agent.recentPositions[agent.recentPositions.length - 2];
+        const p3 = agent.recentPositions[agent.recentPositions.length - 3];
+        const p4 = agent.recentPositions[agent.recentPositions.length - 4];
+
+        if (p1.x === p3.x && p1.y === p3.y && p2.x === p4.x && p2.y === p4.y) {
+          // Ping-pong loop detected! Halt and force re-route
+          agent.yieldWaitTicks = 3 + Math.floor(Math.random() * 3);
+          agent.path = [];
+          if (agent.targetX !== undefined && agent.targetY !== undefined) {
+            this.replanAgentPath(agent, agent.targetX, agent.targetY);
+          }
+          return;
+        }
+      }
 
       // Update heading
       if (agent.x > prevX) agent.heading = 0;
@@ -504,7 +695,20 @@ export class SwarmManager {
 
   private handleAgentArrival(agent: Agent) {
     if (agent.state === 'EN_ROUTE_PICKUP') {
-      // Picked up package at Pick Station! Decrement queue visually
+      // 1. Check if picking up a dropped parcel from the warehouse floor
+      const dropIdx = this.droppedParcels.findIndex(dp => dp.x === agent.x && dp.y === agent.y);
+      if (dropIdx !== -1) {
+        const dp = this.droppedParcels[dropIdx];
+        this.droppedParcels.splice(dropIdx, 1);
+        agent.state = 'CARRYING_TASK';
+        agent.priority = dp.priority;
+        agent.targetX = dp.dropoffStation.x;
+        agent.targetY = dp.dropoffStation.y;
+        this.replanAgentPath(agent, dp.dropoffStation.x, dp.dropoffStation.y);
+        return;
+      }
+
+      // 2. Picked up package at Pick Station! Decrement queue visually
       const stationKey = `${agent.x},${agent.y}`;
       const curQ = this.stationQueues.get(stationKey) || 0;
       if (curQ > 0) {
@@ -564,11 +768,13 @@ export class SwarmManager {
           deadRobot.y = dock.y;
           deadRobot.subX = dock.x;
           deadRobot.subY = dock.y;
-          deadRobot.state = 'PARKED_REPAIR'; // Killed robot safely parked at charging station & stays there!
+          deadRobot.state = 'PARKED_REPAIR'; // Placed at power station to charge for 5 seconds!
+          deadRobot.repairCountdownSec = 5.0; // Charge for 5 seconds
+          deadRobot.desaturation = 1.0; // Starts pale grey and smoothly regains color
           deadRobot.needsRecovery = false;
           deadRobot.towedByAgentId = undefined;
           deadRobot.rescueAssignedAgentId = undefined;
-          deadRobot.battery = 100;
+          deadRobot.battery = 10;
         }
         agent.towedAgentId = undefined;
         agent.state = 'IDLE';
@@ -679,22 +885,36 @@ export class SwarmManager {
     const target = this.agents.find(a => a.id === agentId);
     if (!target) return;
 
+    // USER REQUIREMENT: Produce negative sound when agent is killed
+    soundEffects.playNegativeSound();
+
     target.state = 'CRITICAL_FAILURE';
     target.needsRecovery = true;
     target.rescueAssignedAgentId = undefined;
     target.towedByAgentId = undefined;
+    target.desaturation = 1.0; // USER REQUIREMENT: Loses color and turns pale grey
+    target.repairCountdownSec = 0;
     this.clearAgentReservations(target.id);
     target.path = [];
 
-    // If carrying parcel, drop it and trigger salvage auction for peer pickup
+    // USER REQUIREMENT: Dropped parcel will be picked up by other free robot on route
     if (target.currentTaskId) {
       const task = this.tasks.find(t => t.id === target.currentTaskId);
       if (task) {
+        const dp: DroppedParcel = {
+          id: `DROP-${Math.floor(1000 + Math.random() * 9000)}`,
+          x: target.x,
+          y: target.y,
+          originalTaskId: task.id,
+          priority: task.priority,
+          dropoffStation: task.dropoff,
+          createdAtTick: this.currentTick
+        };
+        this.droppedParcels.push(dp);
         task.status = 'DROPPED_SALVAGE';
-        task.pickup = { x: target.x, y: target.y };
-        task.status = 'PENDING_AUCTION';
-        target.currentTaskId = undefined;
+        soundEffects.playParcelDropSound();
       }
+      target.currentTaskId = undefined;
     }
   }
 
@@ -773,7 +993,9 @@ export class SwarmManager {
       blockedAgentCount: this.blockedAgentsSet.size,
       blockedAlertMessage: this.blockedAlertMessage,
       stationQueues: stationQueuesObj,
-      totalQueuedParcels: totalQueued
+      totalQueuedParcels: totalQueued,
+      activeWarehouse: this.activeWarehouseId,
+      droppedParcelsCount: this.droppedParcels.length
     };
   }
 }

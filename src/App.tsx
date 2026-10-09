@@ -8,7 +8,8 @@ import {
   ToolMode, 
   CellInspectionInfo,
   HardwareRobotState,
-  HardwareCsvRow
+  HardwareCsvRow,
+  CanvasViewMode
 } from './types/simulation';
 import { Header } from './components/Header';
 import { SimulationCanvas } from './components/SimulationCanvas';
@@ -43,7 +44,8 @@ export function App() {
   const [hardwareRobotState, setHardwareRobotState] = useState<HardwareRobotState | null>(null);
   const [hardwareCsvRows, setHardwareCsvRows] = useState<HardwareCsvRow[]>([]);
 
-  // Visual Overlays - User can turn off and on the communication ring
+  // Visual Overlays & 2D/3D View Mode - User can turn off and on rings & switch to 3D Isometric View
+  const [viewMode, setViewMode] = useState<CanvasViewMode>('2D');
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [showPathVectors, setShowPathVectors] = useState<boolean>(true);
   const [showCommRings, setShowCommRings] = useState<boolean>(true);
@@ -293,6 +295,8 @@ export function App() {
         setShowHeatmap(prev => !prev);
       } else if (e.key === 'r' || e.key === 'R') {
         setShowCommRings(prev => !prev);
+      } else if (e.key === 'v' || e.key === 'V') {
+        setViewMode(prev => prev === '2D' ? '3D' : '2D');
       }
     };
 
@@ -321,6 +325,15 @@ export function App() {
         onOpenDocs={() => setIsDocsOpen(true)}
         isHardwareConnected={isHardwareConnected}
         onOpenHardwarePanel={() => setIsHardwarePanelOpen(true)}
+        activeWarehouse={manager.activeWarehouseId}
+        onSelectWarehouse={(id) => {
+          manager.switchWarehouse(id);
+          setTelemetry(manager.getTelemetry());
+          setSelectedAgent(null);
+          setSelectedCell(null);
+        }}
+        viewMode={viewMode}
+        onToggleViewMode={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
       />
 
       {/* Main Workspace */}
@@ -359,10 +372,12 @@ export function App() {
             showCommRings={showCommRings}
             isRunning={isRunning}
             onTogglePlay={() => setIsRunning(prev => !prev)}
+            viewMode={viewMode}
+            onToggleViewMode={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
           />
 
-          {/* CRITICAL ROUTE FULLY BLOCKED ERROR BANNER - ZERO SHARP EDGES */}
-          {telemetry.isRouteFullyBlocked ? (
+          {/* CRITICAL ROUTE FULLY BLOCKED ERROR BANNER - ONLY SHOWN WHEN ACTUALLY BLOCKED */}
+          {telemetry.isRouteFullyBlocked && (
             <div className="absolute top-5 z-30 flex items-center gap-3.5 px-6 py-3.5 rounded-full bg-white/95 border border-rose-200 shadow-xl text-slate-800 animate-bounce backdrop-blur-md">
               <div className="w-9 h-9 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-500 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -372,7 +387,7 @@ export function App() {
                   THE WHOLE ROUTE IS BLOCKED!
                 </div>
                 <div className="text-xs text-slate-500 font-sans">
-                  {telemetry.blockedAgentCount} robot(s) cannot reach their destination. Remove obstacles to open corridor.
+                  {telemetry.blockedAgentCount} robot(s) cannot reach destination. Remove obstacles to open corridor.
                 </div>
               </div>
               <button
@@ -381,20 +396,6 @@ export function App() {
               >
                 REMOVE OBSTACLES
               </button>
-            </div>
-          ) : (
-            /* Interactive Mode Hint Pill */
-            <div className="absolute top-5 bg-white/90 border border-slate-200/80 px-4 py-2 rounded-full text-xs font-medium text-slate-600 pointer-events-none flex items-center gap-2.5 shadow-sm backdrop-blur-md">
-              <span className={`w-2.5 h-2.5 rounded-full ${
-                toolMode === 'KILL' ? 'bg-rose-500 animate-ping' :
-                toolMode === 'OBSTACLE' ? 'bg-amber-500 animate-pulse' :
-                'bg-sky-500'
-              }`}></span>
-              <span>
-                {toolMode === 'KILL' && "KILL MODE: Click any robot to trigger breakdown and auto-towing recovery"}
-                {toolMode === 'OBSTACLE' && "OBSTACLE MODE: Click aisle cells to place or remove obstacles"}
-                {toolMode === 'INSPECT' && "INSPECT MODE: Click any cell or robot to inspect parameters (Press 'E' for Hardware Twin)"}
-              </span>
             </div>
           )}
         </main>

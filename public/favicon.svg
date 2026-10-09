@@ -1,13 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <defs>
-    <linearGradient id="ghostGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00F0FF"/>
-      <stop offset="100%" stop-color="#0088FF"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="#0E1420"/>
-  <path d="M32 10C22 10 16 17 16 26C16 33 17 46 17 48C17 50 19 52 21 51C24 49.5 27 52 29 52C31 52 33 49.5 35 49.5C37 49.5 39 52 41 52C43 52 46 49.5 48 51C50 52 52 50 52 48C52 46 53 33 53 26C53 17 47 10 32 10Z" fill="url(#ghostGrad)" stroke="#00F0FF" stroke-width="2"/>
-  <rect x="24" y="22" width="16" height="5" rx="2.5" fill="#070A0F"/>
-  <circle cx="28" cy="24.5" r="1.5" fill="#00FF66"/>
-  <circle cx="36" cy="24.5" r="1.5" fill="#00FF66"/>
+  <!-- Rounded App Background -->
+  <rect width="64" height="64" rx="16" fill="#0F172A"/>
+
+  <!-- Left Drive Wheel -->
+  <rect x="6" y="20" width="7" height="24" rx="2.5" fill="#334155" stroke="#1E293B" stroke-width="1.5"/>
+  <line x1="6" y1="26" x2="13" y2="26" stroke="#475569" stroke-width="1.5"/>
+  <line x1="6" y1="32" x2="13" y2="32" stroke="#475569" stroke-width="1.5"/>
+  <line x1="6" y1="38" x2="13" y2="38" stroke="#475569" stroke-width="1.5"/>
+
+  <!-- Right Drive Wheel -->
+  <rect x="51" y="20" width="7" height="24" rx="2.5" fill="#334155" stroke="#1E293B" stroke-width="1.5"/>
+  <line x1="51" y1="26" x2="58" y2="26" stroke="#475569" stroke-width="1.5"/>
+  <line x1="51" y1="32" x2="58" y2="32" stroke="#475569" stroke-width="1.5"/>
+  <line x1="51" y1="38" x2="58" y2="38" stroke="#475569" stroke-width="1.5"/>
+
+  <!-- Robot Chassis Body -->
+  <rect x="11" y="14" width="42" height="36" rx="7" fill="#F8FAFC" stroke="#0284C7" stroke-width="2.5"/>
+
+  <!-- Corner Bumpers -->
+  <rect x="11" y="14" width="5" height="5" fill="#1E293B"/>
+  <rect x="48" y="14" width="5" height="5" fill="#1E293B"/>
+  <rect x="11" y="45" width="5" height="5" fill="#1E293B"/>
+  <rect x="48" y="45" width="5" height="5" fill="#1E293B"/>
+
+  <!-- Front Optical Sensor / Lidar -->
+  <circle cx="32" cy="18" r="3" fill="#0284C7"/>
+  <circle cx="32" cy="18" r="1.5" fill="#38BDF8"/>
+
+  <!-- Parcel Crate Carried On Robot Bed -->
+  <rect x="20" y="24" width="24" height="22" rx="2.5" fill="#D97706" stroke="#B45309" stroke-width="1.5"/>
+  <!-- Parcel Tape -->
+  <rect x="29.5" y="24" width="5" height="22" fill="#FDE047"/>
+  <!-- Shipping Barcode Label -->
+  <rect x="22.5" y="27" width="5.5" height="4.5" fill="#FFFFFF"/>
+  <line x1="24" y1="28.5" x2="26.5" y2="28.5" stroke="#1E293B" stroke-width="1"/>
+  <line x1="24" y1="30" x2="26.5" y2="30" stroke="#1E293B" stroke-width="1"/>
 </svg>
