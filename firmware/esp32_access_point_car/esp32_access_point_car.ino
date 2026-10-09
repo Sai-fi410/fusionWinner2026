@@ -5,6 +5,26 @@
 #include <ESP32Servo.h>
 
 // ============================================================================
+// Compatibility Defs for ESPAsyncWebServer & ArduinoJson 6 / 7
+// ============================================================================
+// ESPAsyncWebServer defines WS_TEXT for text frame opcodes.
+// Provide safe fallbacks so this compiles across all library versions and forks.
+#ifndef WS_TEXT
+  #define WS_TEXT 0x01
+#endif
+#ifndef WS_OPCODE_TEXT
+  #define WS_OPCODE_TEXT 0x01
+#endif
+
+// ArduinoJson 7 removed StaticJsonDocument in favor of unified JsonDocument.
+// This macro guarantees 100% error-free compilation in both ArduinoJson 6 & 7.
+#if defined(ARDUINOJSON_VERSION_MAJOR) && (ARDUINOJSON_VERSION_MAJOR >= 7)
+  #define ALLOCATE_JSON_DOC(doc, size) JsonDocument doc
+#else
+  #define ALLOCATE_JSON_DOC(doc, size) StaticJsonDocument<size> doc
+#endif
+
+// ============================================================================
 // Fusionistic (IOT-04) — Option 1: ESP32 Access Point + Custom Web Dashboard
 // Wi-Fi Access Point Credentials
 // Connect your PC/Laptop Wi-Fi to "ESP32-Car" (Password: 12345678Password)
@@ -48,12 +68,12 @@ float getUltrasonicDistance() {
 
 // Broadcast Real-Time Telemetry to all Connected Web Clients
 void broadcastTelemetry() {
-  StaticJsonDocument<256> doc;
+  ALLOCATE_JSON_DOC(doc, 256);
   doc["x"] = currentX;
   doc["y"] = currentY;
   doc["targetX"] = targetX;
   doc["targetY"] = targetY;
-  doc["ir"] = (digitalRead(IR_PIN) == LOW); // LOW typically indicates active optical trigger
+  doc["ir"] = (digitalRead(IR_PIN) == LOW); // LOW indicates active optical trigger
   doc["obstacle"] = obstacleDetected;
   doc["status"] = isNavigating ? (obstacleDetected ? "DETOURING" : "NAVIGATING") : "IDLE";
 
@@ -71,8 +91,9 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
     Serial.printf("[WebSocket] Client #%u disconnected\n", client->id());
   } else if (type == WS_EVT_DATA) {
     AwsFrameInfo *info = (AwsFrameInfo*)arg;
-    if (info->opcode == WS_OPCODE_TEXT) {
-      StaticJsonDocument<256> doc;
+    // Check for Text frame using WS_TEXT (standard in ESPAsyncWebServer)
+    if (info->opcode == WS_TEXT || info->opcode == WS_OPCODE_TEXT) {
+      ALLOCATE_JSON_DOC(doc, 256);
       DeserializationError error = deserializeJson(doc, data, len);
       if (!error) {
         String action = doc["action"] | "";

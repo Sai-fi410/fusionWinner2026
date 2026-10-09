@@ -53,6 +53,21 @@ const ESP32_SKETCH_CODE = `#include <WiFi.h>
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
 
+// Compatibility definitions across ESPAsyncWebServer versions
+#ifndef WS_TEXT
+  #define WS_TEXT 0x01
+#endif
+#ifndef WS_OPCODE_TEXT
+  #define WS_OPCODE_TEXT 0x01
+#endif
+
+// ArduinoJson 6 and 7 dual-compatibility macro
+#if defined(ARDUINOJSON_VERSION_MAJOR) && (ARDUINOJSON_VERSION_MAJOR >= 7)
+  #define ALLOCATE_JSON_DOC(doc, size) JsonDocument doc
+#else
+  #define ALLOCATE_JSON_DOC(doc, size) StaticJsonDocument<size> doc
+#endif
+
 // Wi-Fi Access Point Credentials
 const char* ssid = "ESP32-Car";
 const char* password = "12345678Password";
@@ -90,7 +105,7 @@ float getUltrasonicDistance() {
 
 // Broadcast Telemetry to Connected Web Clients
 void broadcastTelemetry() {
-  StaticJsonDocument<256> doc;
+  ALLOCATE_JSON_DOC(doc, 256);
   doc["x"] = currentX;
   doc["y"] = currentY;
   doc["targetX"] = targetX;
@@ -108,8 +123,8 @@ void broadcastTelemetry() {
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
   if (type == WS_EVT_DATA) {
     AwsFrameInfo *info = (AwsFrameInfo*)arg;
-    if (info->opcode == WS_OPCODE_TEXT) {
-      StaticJsonDocument<256> doc;
+    if (info->opcode == WS_TEXT || info->opcode == WS_OPCODE_TEXT) {
+      ALLOCATE_JSON_DOC(doc, 256);
       DeserializationError error = deserializeJson(doc, data, len);
       if (!error) {
         String action = doc["action"] | "";
