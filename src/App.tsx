@@ -20,7 +20,7 @@ import { CellInspector } from './components/CellInspector';
 import { CustomParcelModal } from './components/CustomParcelModal';
 import { HardwareEdgePanel } from './components/HardwareEdgePanel';
 import { PresentationDocViewer } from './components/PresentationDocViewer';
-import { AlertTriangle } from 'lucide-react';
+import { Activity, AlertTriangle } from 'lucide-react';
 
 export function App() {
   // Swarm Engine Singleton
@@ -50,6 +50,10 @@ export function App() {
   const [showPathVectors, setShowPathVectors] = useState<boolean>(true);
   const [showCommRings, setShowCommRings] = useState<boolean>(true);
   const [isDocsOpen, setIsDocsOpen] = useState<boolean>(false);
+
+  // Dark Mode Theme (Default ON for clean, sleek minimalistic industrial UI)
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
+  const [isTelemetryOpen, setIsTelemetryOpen] = useState<boolean>(false);
 
   // Telemetry Snapshot
   const [telemetry, setTelemetry] = useState<TelemetryData>(manager.getTelemetry());
@@ -123,6 +127,22 @@ export function App() {
                   }
                   setTelemetry(manager.getTelemetry());
                 }
+              }
+
+              if (data.obstacleAdded) {
+                manager.addObstacle(data.obstacleAdded.x, data.obstacleAdded.y);
+                setTelemetry(manager.getTelemetry());
+              }
+
+              if (data.robotState?.blockedObstacles) {
+                let obsChanged = false;
+                for (const obs of data.robotState.blockedObstacles) {
+                  const [ox, oy] = typeof obs === 'string' ? obs.split(',').map(Number) : [obs.x, obs.y];
+                  if (!isNaN(ox) && !isNaN(oy)) {
+                    if (manager.addObstacle(ox, oy)) obsChanged = true;
+                  }
+                }
+                if (obsChanged) setTelemetry(manager.getTelemetry());
               }
 
               if (data.csvRow) {
@@ -297,6 +317,8 @@ export function App() {
         setShowCommRings(prev => !prev);
       } else if (e.key === 'v' || e.key === 'V') {
         setViewMode(prev => prev === '2D' ? '3D' : '2D');
+      } else if (e.key === 'd' || e.key === 'D') {
+        setIsDarkMode(prev => !prev);
       }
     };
 
@@ -305,7 +327,9 @@ export function App() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#EFF3F8] text-slate-800 font-sans">
+    <div className={`flex flex-col h-screen w-screen overflow-hidden font-sans transition-colors duration-200 ${
+      isDarkMode ? 'bg-[#090D16] text-slate-100' : 'bg-[#EFF3F8] text-slate-800'
+    }`}>
       {/* Top Header */}
       <Header
         systemMode={systemMode}
@@ -334,6 +358,8 @@ export function App() {
         }}
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode(prev => !prev)}
       />
 
       {/* Main Workspace */}
@@ -349,10 +375,25 @@ export function App() {
           onOpenParcelModal={() => setIsParcelModalOpen(true)}
           isHardwareConnected={isHardwareConnected}
           onOpenHardwarePanel={() => setIsHardwarePanelOpen(true)}
+          isDarkMode={isDarkMode}
+          isMobileOpen={isTelemetryOpen}
+          onCloseMobile={() => setIsTelemetryOpen(false)}
         />
 
-        {/* Central 2D Simulation Arena */}
-        <main className="flex-1 relative flex flex-col items-center justify-center p-3 sm:p-4 overflow-hidden bg-[#EFF3F8]">
+        {/* Central 2D / 3D Simulation Arena */}
+        <main className={`flex-1 relative flex flex-col items-center justify-center p-3 sm:p-4 overflow-hidden transition-colors duration-200 ${
+          isDarkMode ? 'bg-[#090D16]' : 'bg-[#EFF3F8]'
+        }`}>
+          <button
+            type="button"
+            onClick={() => setIsTelemetryOpen(true)}
+            className={`absolute left-3 top-3 z-20 lg:hidden inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur-md ${
+              isDarkMode ? 'border-slate-700 bg-slate-900/95 text-slate-100' : 'border-slate-200 bg-white/95 text-slate-800'
+            }`}
+            aria-label="Open telemetry panel"
+          >
+            <Activity className="h-4 w-4 text-sky-400" /> Telemetry
+          </button>
           <SimulationCanvas
             manager={manager}
             selectedAgent={selectedAgent}
@@ -374,6 +415,7 @@ export function App() {
             onTogglePlay={() => setIsRunning(prev => !prev)}
             viewMode={viewMode}
             onToggleViewMode={() => setViewMode(prev => prev === '2D' ? '3D' : '2D')}
+            isDarkMode={isDarkMode}
           />
 
           {/* CRITICAL ROUTE FULLY BLOCKED ERROR BANNER - ONLY SHOWN WHEN ACTUALLY BLOCKED */}
@@ -407,6 +449,7 @@ export function App() {
             onClose={() => setSelectedAgent(null)}
             onKillAgent={handleKillAgent}
             onClearObstacles={handleClearObstacles}
+            isDarkMode={isDarkMode}
           />
         )}
 
@@ -415,6 +458,7 @@ export function App() {
           <CellInspector
             info={selectedCell}
             onClose={() => setSelectedCell(null)}
+            isDarkMode={isDarkMode}
           />
         )}
       </div>
@@ -432,6 +476,7 @@ export function App() {
         onTogglePathVectors={() => setShowPathVectors(!showPathVectors)}
         showCommRings={showCommRings}
         onToggleCommRings={() => setShowCommRings(!showCommRings)}
+        isDarkMode={isDarkMode}
       />
 
       {/* Custom Parcel Queue Config Modal */}
@@ -458,6 +503,11 @@ export function App() {
         onSendCommand={handleSendHardwareCommand}
         onInjectObstacle={handleInjectHardwareObstacle}
         onResetPosition={handleResetHardwarePosition}
+        isDarkMode={isDarkMode}
+        onRegisterSimulationObstacle={(x, y) => {
+          manager.addObstacle(x, y);
+          setTelemetry(manager.getTelemetry());
+        }}
       />
 
       {/* Comprehensive System Documentation Viewer Modal */}

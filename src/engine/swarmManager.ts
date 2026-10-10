@@ -881,6 +881,21 @@ export class SwarmManager {
     }
   }
 
+  public addObstacle(x: number, y: number): boolean {
+    if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return false;
+    if (this.layout.grid[y][x] === 'OBSTACLE') return false; // Already an obstacle
+    this.layout.grid[y][x] = 'OBSTACLE';
+
+    // Replan all active agents immediately
+    for (const agent of this.agents) {
+      if (agent.targetX !== undefined && agent.targetY !== undefined && agent.state !== 'CRITICAL_FAILURE') {
+        agent.commPulseRadius = 1;
+        this.replanAgentPath(agent, agent.targetX, agent.targetY);
+      }
+    }
+    return true;
+  }
+
   public killAgent(agentId: string) {
     const target = this.agents.find(a => a.id === agentId);
     if (!target) return;

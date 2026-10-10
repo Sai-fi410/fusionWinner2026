@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { SwarmManager } from '../engine/swarmManager';
 import { Agent, ToolMode, CellInspectionInfo, CanvasViewMode } from '../types/simulation';
 import { GRID_WIDTH, GRID_HEIGHT } from '../engine/grid';
-import { Play, Pause, X, Layers, Box } from 'lucide-react';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 
 interface SimulationCanvasProps {
   manager: SwarmManager;
@@ -19,6 +19,7 @@ interface SimulationCanvasProps {
   onTogglePlay: () => void;
   viewMode: CanvasViewMode;
   onToggleViewMode?: () => void;
+  isDarkMode?: boolean;
 }
 
 export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
@@ -35,14 +36,25 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
   isRunning,
   onTogglePlay,
   viewMode = '2D',
-  onToggleViewMode,
+  isDarkMode = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hoverCoord, setHoverCoord] = useState<{ x: number; y: number } | null>(null);
-  const [showPauseToast, setShowPauseToast] = useState<boolean>(true);
+
+  // 3D Isometric Zoom System (0.6x to 2.2x)
+  const [zoom3D, setZoom3D] = useState<number>(1.0);
 
   // Subpixel render interpolation with NaN guards
   const interpolatedAgents = useRef<Map<string, { x: number; y: number }>>(new Map());
+
+  // Mouse wheel zoom handler for 3D Isometric Mode
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    if (viewMode === '3D') {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      setZoom3D(prev => Math.max(0.6, Math.min(2.2, +(prev + delta).toFixed(2))));
+    }
+  };
 
   // Main 60 FPS Render Loop supporting both 2D and 3D Isometric View
   useEffect(() => {
@@ -65,18 +77,19 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
       // MODE 1: 3D ISOMETRIC WAREHOUSE SIMULATION
       // ==========================================
       if (viewMode === '3D') {
-        const isoOriginX = width * 0.5;
-        const isoOriginY = height * 0.16;
-        const isoTileW = width / 34;
+        const baseTileW = width / 34;
+        const isoTileW = baseTileW * zoom3D;
         const isoTileH = isoTileW * 0.52;
+        const isoOriginX = width * 0.5;
+        const isoOriginY = height * 0.22 - (zoom3D - 1.0) * (height * 0.12);
 
         const toIso = (gx: number, gy: number, gz: number = 0) => ({
           x: isoOriginX + (gx - gy) * (isoTileW * 0.5),
-          y: isoOriginY + (gx + gy) * (isoTileH * 0.5) - gz
+          y: isoOriginY + (gx + gy) * (isoTileH * 0.5) - gz * zoom3D
         });
 
-        // 1. Clear background (High-tech drafting studio)
-        ctx.fillStyle = '#CBD5E1';
+        // 1. Clear background (High-tech studio canvas)
+        ctx.fillStyle = isDarkMode ? '#090D16' : '#CBD5E1';
         ctx.fillRect(0, 0, width, height);
 
         // 2. Concrete Warehouse Perimeter Walls
@@ -88,7 +101,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         const bwT0 = toIso(0, 0, wallH);
         const bwT1 = toIso(GRID_WIDTH, 0, wallH);
 
-        ctx.fillStyle = '#94A3B8'; // Concrete back wall
+        ctx.fillStyle = isDarkMode ? '#1E293B' : '#94A3B8';
         ctx.beginPath();
         ctx.moveTo(bwP0.x, bwP0.y);
         ctx.lineTo(bwP1.x, bwP1.y);
@@ -96,7 +109,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         ctx.lineTo(bwT0.x, bwT0.y);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = '#64748B';
+        ctx.strokeStyle = isDarkMode ? '#334155' : '#64748B';
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
@@ -104,7 +117,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         const lwP1 = toIso(0, GRID_HEIGHT, 0);
         const lwT1 = toIso(0, GRID_HEIGHT, wallH);
 
-        ctx.fillStyle = '#64748B'; // Concrete side wall (shaded darker)
+        ctx.fillStyle = isDarkMode ? '#162032' : '#64748B';
         ctx.beginPath();
         ctx.moveTo(bwP0.x, bwP0.y);
         ctx.lineTo(lwP1.x, lwP1.y);
@@ -112,7 +125,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         ctx.lineTo(bwT0.x, bwT0.y);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = '#475569';
+        ctx.strokeStyle = isDarkMode ? '#1E293B' : '#475569';
         ctx.stroke();
 
         // 3. Concrete Floor Diamond Plane
@@ -121,7 +134,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         const flP2 = toIso(GRID_WIDTH, GRID_HEIGHT, 0);
         const flP3 = toIso(0, GRID_HEIGHT, 0);
 
-        ctx.fillStyle = '#E2E8F0';
+        ctx.fillStyle = isDarkMode ? '#1E293B' : '#E2E8F0';
         ctx.beginPath();
         ctx.moveTo(flP0.x, flP0.y);
         ctx.lineTo(flP1.x, flP1.y);
@@ -129,12 +142,12 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         ctx.lineTo(flP3.x, flP3.y);
         ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = '#94A3B8';
+        ctx.strokeStyle = isDarkMode ? '#334155' : '#94A3B8';
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         // Subtle floor diamond tiles
-        ctx.strokeStyle = 'rgba(203, 213, 225, 0.7)';
+        ctx.strokeStyle = isDarkMode ? 'rgba(51, 65, 85, 0.4)' : 'rgba(203, 213, 225, 0.7)';
         ctx.lineWidth = 0.8;
         for (let x = 0; x <= GRID_WIDTH; x += 2) {
           const s = toIso(x, 0, 0);
@@ -184,7 +197,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             const p = toIso(wp.x + 0.5, wp.y + 0.5, 0);
             ctx.fillStyle = '#06B6D4';
             ctx.beginPath();
-            ctx.ellipse(p.x, p.y, 4.5, 2.4, 0, 0, Math.PI * 2);
+            ctx.ellipse(p.x, p.y, 4.5 * zoom3D, 2.4 * zoom3D, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.strokeStyle = '#FFFFFF';
             ctx.lineWidth = 1.2;
@@ -197,11 +210,14 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           | { kind: 'RACK'; x: number; y: number; depth: number }
           | { kind: 'OBSTACLE'; x: number; y: number; depth: number }
           | { kind: 'CHARGING'; x: number; y: number; depth: number }
+          | { kind: 'PICK_STATION'; ps: { x: number; y: number }; index: number; depth: number }
+          | { kind: 'DROP_BAY'; db: { x: number; y: number }; index: number; depth: number }
           | { kind: 'DROPPED'; dp: any; depth: number }
           | { kind: 'AGENT'; agent: Agent; depth: number };
 
         const items: RenderItem[] = [];
 
+        // Add Racks, Obstacles, Docks
         for (let y = 0; y < GRID_HEIGHT; y++) {
           for (let x = 0; x < GRID_WIDTH; x++) {
             const cellType = grid[y][x];
@@ -211,10 +227,24 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           }
         }
 
+        // HIGH VISIBILITY: Add Pick Stations to depth-sorted items
+        for (let i = 0; i < layout.pickStations.length; i++) {
+          const ps = layout.pickStations[i];
+          items.push({ kind: 'PICK_STATION', ps, index: i, depth: ps.x + ps.y + 0.05 });
+        }
+
+        // HIGH VISIBILITY: Add Drop Bays to depth-sorted items
+        for (let i = 0; i < layout.dropBays.length; i++) {
+          const db = layout.dropBays[i];
+          items.push({ kind: 'DROP_BAY', db, index: i, depth: db.x + db.y + 0.05 });
+        }
+
+        // Add Dropped Parcels
         for (const dp of manager.droppedParcels) {
           items.push({ kind: 'DROPPED', dp, depth: dp.x + dp.y + 0.2 });
         }
 
+        // Add Agents
         for (const agent of manager.agents) {
           const targetX = Number.isFinite(agent.x) ? agent.x : 2;
           const targetY = Number.isFinite(agent.y) ? agent.y : 2;
@@ -227,6 +257,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           items.push({ kind: 'AGENT', agent, depth: interp.x + interp.y + 0.5 });
         }
 
+        // Sort Back to Front
         items.sort((a, b) => a.depth - b.depth);
 
         // 6. Render 3D Entities Back-to-Front
@@ -291,7 +322,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             ctx.lineTo((t1.x + t2.x) / 2, (t1.y + t2.y) / 2);
             ctx.stroke();
           } else if (item.kind === 'OBSTACLE') {
-            // 3D Green Obstacle Cube (from Reference Image)
+            // 3D Obstacle Cube
             const ox = item.x;
             const oy = item.y;
             const oH = 16;
@@ -340,6 +371,156 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             ctx.fill();
             ctx.strokeStyle = '#16A34A';
             ctx.stroke();
+          } else if (item.kind === 'PICK_STATION') {
+            // ==========================================
+            // 3D INBOUND PICK-UP INDUCTION STATION
+            // ==========================================
+            const ps = item.ps;
+            const qCount = manager.stationQueues.get(`${ps.x},${ps.y}`) || 0;
+            const sH = 10;
+
+            const p0 = toIso(ps.x, ps.y, 0);
+            const p1 = toIso(ps.x + 1, ps.y, 0);
+            const p2 = toIso(ps.x + 1, ps.y + 1, 0);
+            const p3 = toIso(ps.x, ps.y + 1, 0);
+
+            const t0 = toIso(ps.x, ps.y, sH);
+            const t1 = toIso(ps.x + 1, ps.y, sH);
+            const t2 = toIso(ps.x + 1, ps.y + 1, sH);
+            const t3 = toIso(ps.x, ps.y + 1, sH);
+
+            // Ground glowing emerald diamond halo
+            ctx.save();
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
+            ctx.closePath(); ctx.fill();
+
+            // Metallic Emerald Pedestal Faces
+            ctx.fillStyle = '#059669';
+            ctx.beginPath();
+            ctx.moveTo(p3.x, p3.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#047857'; ctx.lineWidth = 1.2; ctx.stroke();
+
+            ctx.fillStyle = '#047857';
+            ctx.beginPath();
+            ctx.moveTo(p2.x, p2.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(t1.x, t1.y); ctx.lineTo(t2.x, t2.y);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#065F46'; ctx.stroke();
+
+            // Top Induction Platform
+            ctx.fillStyle = '#10B981';
+            ctx.beginPath();
+            ctx.moveTo(t0.x, t0.y); ctx.lineTo(t1.x, t1.y); ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#6EE7B7'; ctx.lineWidth = 1.5; ctx.stroke();
+
+            // Elevated Holographic 3D Billboard Signage
+            const tagPos = toIso(ps.x + 0.5, ps.y + 0.5, 42);
+            const baseCenter = toIso(ps.x + 0.5, ps.y + 0.5, sH);
+
+            // Laser tether guideline
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.7)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(baseCenter.x, baseCenter.y);
+            ctx.lineTo(tagPos.x, tagPos.y + 8);
+            ctx.stroke();
+
+            // Floating Billboard Tag Pill
+            ctx.font = 'bold 9px system-ui, sans-serif';
+            const tagText = `📦 PICK-UP #${item.index + 1} (${qCount})`;
+            const tw = ctx.measureText(tagText).width;
+
+            ctx.fillStyle = isDarkMode ? 'rgba(6, 78, 59, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+            ctx.strokeStyle = '#10B981';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(tagPos.x - (tw + 14) / 2, tagPos.y - 10, tw + 14, 18, 9);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isDarkMode ? '#A7F3D0' : '#065F46';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(tagText, tagPos.x, tagPos.y);
+            ctx.restore();
+          } else if (item.kind === 'DROP_BAY') {
+            // ==========================================
+            // 3D OUTBOUND DROP-OFF SORTATION BAY
+            // ==========================================
+            const db = item.db;
+            const doneCount = manager.dropBayCounts.get(`${db.x},${db.y}`) || 0;
+            const sH = 10;
+
+            const p0 = toIso(db.x, db.y, 0);
+            const p1 = toIso(db.x + 1, db.y, 0);
+            const p2 = toIso(db.x + 1, db.y + 1, 0);
+            const p3 = toIso(db.x, db.y + 1, 0);
+
+            const t0 = toIso(db.x, db.y, sH);
+            const t1 = toIso(db.x + 1, db.y, sH);
+            const t2 = toIso(db.x + 1, db.y + 1, sH);
+            const t3 = toIso(db.x, db.y + 1, sH);
+
+            // Ground glowing cyan diamond halo
+            ctx.save();
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.35)';
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
+            ctx.closePath(); ctx.fill();
+
+            // Metallic Blue Pedestal Faces
+            ctx.fillStyle = '#2563EB';
+            ctx.beginPath();
+            ctx.moveTo(p3.x, p3.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#1D4ED8'; ctx.lineWidth = 1.2; ctx.stroke();
+
+            ctx.fillStyle = '#1D4ED8';
+            ctx.beginPath();
+            ctx.moveTo(p2.x, p2.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(t1.x, t1.y); ctx.lineTo(t2.x, t2.y);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#1E40AF'; ctx.stroke();
+
+            // Top Sortation Chute Platform
+            ctx.fillStyle = '#3B82F6';
+            ctx.beginPath();
+            ctx.moveTo(t0.x, t0.y); ctx.lineTo(t1.x, t1.y); ctx.lineTo(t2.x, t2.y); ctx.lineTo(t3.x, t3.y);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#93C5FD'; ctx.lineWidth = 1.5; ctx.stroke();
+
+            // Elevated Holographic 3D Billboard Signage
+            const tagPos = toIso(db.x + 0.5, db.y + 0.5, 42);
+            const baseCenter = toIso(db.x + 0.5, db.y + 0.5, sH);
+
+            // Laser tether guideline
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.7)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(baseCenter.x, baseCenter.y);
+            ctx.lineTo(tagPos.x, tagPos.y + 8);
+            ctx.stroke();
+
+            // Floating Billboard Tag Pill
+            ctx.font = 'bold 9px system-ui, sans-serif';
+            const tagText = `🚚 DROP-OFF #${item.index + 1} (${doneCount})`;
+            const tw = ctx.measureText(tagText).width;
+
+            ctx.fillStyle = isDarkMode ? 'rgba(30, 58, 138, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+            ctx.strokeStyle = '#3B82F6';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(tagPos.x - (tw + 14) / 2, tagPos.y - 10, tw + 14, 18, 9);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isDarkMode ? '#BFDBFE' : '#1E40AF';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(tagText, tagPos.x, tagPos.y);
+            ctx.restore();
           } else if (item.kind === 'DROPPED') {
             // 3D Dropped Crate on Floor
             const dp = item.dp;
@@ -383,9 +564,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             if (showCommRings && agent.state !== 'CRITICAL_FAILURE' && agent.state !== 'PARKED_REPAIR') {
               const rPhase = (now % 1600) / 1600;
               const rPhase2 = ((now + 800) % 1600) / 1600;
-              const rx1 = 14 + rPhase * 16;
+              const rx1 = (14 + rPhase * 16) * zoom3D;
               const ry1 = rx1 * 0.52;
-              const rx2 = 14 + rPhase2 * 16;
+              const rx2 = (14 + rPhase2 * 16) * zoom3D;
               const ry2 = rx2 * 0.52;
 
               const isHazard = Boolean(agent.isNearHazard);
@@ -420,16 +601,16 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             }
 
             // 3D AMR Robot Chassis
-            const rH = 8;
-            const rRadius = 11;
+            const rH = 8 * zoom3D;
+            const rRadius = 11 * zoom3D;
             const desat = agent.desaturation !== undefined ? agent.desaturation : (agent.state === 'CRITICAL_FAILURE' ? 1.0 : 0.0);
 
             // Shading
-            const bodyColor = desat > 0.8 ? '#CBD5E1' : '#FFFFFF';
+            const bodyColor = desat > 0.8 ? '#CBD5E1' : (isDarkMode ? '#F8FAFC' : '#FFFFFF');
             const rimColor = desat > 0.8 ? '#64748B' : (agent.state === 'CARRYING_TASK' ? '#10B981' : '#0284C7');
 
-            // 3D Cylinder / Rounded Block
-            ctx.fillStyle = '#0F172A'; // Dark Base / Wheels
+            // 3D Cylinder Base / Drive Wheels
+            ctx.fillStyle = '#0F172A';
             ctx.beginPath();
             ctx.ellipse(pBase.x, pBase.y, rRadius + 1.5, (rRadius + 1.5) * 0.52, 0, 0, Math.PI * 2);
             ctx.fill();
@@ -448,25 +629,32 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             ctx.stroke();
 
             // Optical Sensor at front
-            ctx.fillStyle = rimColor;
+            const headAngle = agent.heading ?? 0;
+            const eyeX = pBase.x + Math.cos(headAngle) * (rRadius * 0.65);
+            const eyeY = (pBase.y - rH) + Math.sin(headAngle) * (rRadius * 0.35);
+            ctx.fillStyle = desat > 0.8 ? '#64748B' : '#0284C7';
             ctx.beginPath();
-            ctx.arc(pBase.x + 3, pBase.y - rH, 2.5, 0, Math.PI * 2);
+            ctx.arc(eyeX, eyeY, 2.5 * zoom3D, 0, Math.PI * 2);
             ctx.fill();
 
-            // 3D Parcel Crate on Top if Carrying
+            // 3D Carried Parcel Crate on AMR Platform
             if (agent.state === 'CARRYING_TASK') {
-              const cHeight = 14;
-              const cW = 7;
-              const cp0 = { x: pBase.x - cW, y: pBase.y - rH - 2 };
-              const cp1 = { x: pBase.x + cW, y: pBase.y - rH - 2 };
-              const cp2 = { x: pBase.x + cW, y: pBase.y - rH - cHeight };
-              const cp3 = { x: pBase.x - cW, y: pBase.y - rH - cHeight };
+              const cWidth = 9 * zoom3D;
+              const cHeight = 8 * zoom3D;
+              const cElev = (rH + 1);
 
-              ctx.fillStyle = '#B45309';
-              ctx.fillRect(cp0.x, cp3.y, cW * 2, cHeight);
+              const cp0 = toIso(interp.x + 0.3, interp.y + 0.3, cElev);
+              const cp1 = toIso(interp.x + 0.7, interp.y + 0.3, cElev);
+              const cp2 = toIso(interp.x + 0.7, interp.y + 0.7, cElev);
+              const cp3 = toIso(interp.x + 0.3, interp.y + 0.7, cElev);
+
               ctx.fillStyle = '#D97706';
               ctx.beginPath();
-              ctx.ellipse(pBase.x, cp3.y, cW, cW * 0.5, 0, 0, Math.PI * 2);
+              ctx.moveTo(cp0.x, cp0.y);
+              ctx.lineTo(cp1.x, cp1.y);
+              ctx.lineTo(cp2.x, cp2.y);
+              ctx.lineTo(cp3.x, cp3.y);
+              ctx.closePath();
               ctx.fill();
 
               // Parcel tape stripe
@@ -476,15 +664,15 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
             // Floating ID Label (A1, A2, etc.)
             const uName = agent.id.replace('AMR-', 'A').replace('FUS-HW-01', 'HW1');
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            ctx.strokeStyle = '#94A3B8';
+            ctx.fillStyle = isDarkMode ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+            ctx.strokeStyle = isDarkMode ? '#475569' : '#94A3B8';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.roundRect(pBase.x - 10, pBase.y - rH - 24, 20, 11, 4);
             ctx.fill();
             ctx.stroke();
 
-            ctx.fillStyle = desat > 0.8 ? '#64748B' : '#0F172A';
+            ctx.fillStyle = desat > 0.8 ? '#64748B' : (isDarkMode ? '#F8FAFC' : '#0F172A');
             ctx.font = 'bold 8px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(uName, pBase.x, pBase.y - rH - 16);
@@ -493,7 +681,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             // 5s Charging Countdown in 3D
             if (agent.state === 'PARKED_REPAIR') {
               const secLeft = agent.repairCountdownSec !== undefined ? agent.repairCountdownSec.toFixed(1) : '5.0';
-              ctx.fillStyle = '#7C3AED';
+              ctx.fillStyle = '#A855F7';
               ctx.font = 'bold 8px monospace';
               ctx.textAlign = 'center';
               ctx.fillText(`⚡ ${secLeft}s`, pBase.x, pBase.y - rH - 27);
@@ -508,29 +696,29 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           ctx.strokeStyle = toolMode === 'OBSTACLE' ? '#DC2626' : '#0284C7';
           ctx.lineWidth = 1.8;
           ctx.beginPath();
-          ctx.ellipse(hp.x, hp.y, 16, 8, 0, 0, Math.PI * 2);
+          ctx.ellipse(hp.x, hp.y, 16 * zoom3D, 8 * zoom3D, 0, 0, Math.PI * 2);
           ctx.stroke();
         }
 
         // 3D Isometric View Mode Watermark Tag
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.fillStyle = isDarkMode ? 'rgba(148, 163, 184, 0.6)' : 'rgba(15, 23, 42, 0.8)';
         ctx.font = 'bold 10px monospace';
-        ctx.fillText('3D ISOMETRIC VIEWPORT (SIMTOOL PERSPECTIVE)', 20, height - 20);
+        ctx.fillText(`3D ISOMETRIC VIEWPORT (ZOOM: ${Math.round(zoom3D * 100)}%)`, 20, height - 20);
 
       } else {
         // ==========================================
         // MODE 2: 2D TACTICAL ORTHOGRAPHIC MAP
         // ==========================================
 
-        // 1. Clear background (Industrial concrete warehouse floor #E2E8F0)
-        ctx.fillStyle = '#CBD5E1';
+        // 1. Clear background
+        ctx.fillStyle = isDarkMode ? '#0F172A' : '#CBD5E1';
         ctx.fillRect(0, 0, width, height);
 
-        ctx.fillStyle = '#E2E8F0';
+        ctx.fillStyle = isDarkMode ? '#1E293B' : '#E2E8F0';
         ctx.fillRect(4, 4, width - 8, height - 8);
 
         // Grid joints
-        ctx.strokeStyle = 'rgba(203, 213, 225, 0.6)';
+        ctx.strokeStyle = isDarkMode ? 'rgba(51, 65, 85, 0.5)' : 'rgba(203, 213, 225, 0.6)';
         ctx.lineWidth = 1;
         for (let x = 0; x <= GRID_WIDTH; x++) {
           ctx.beginPath();
@@ -585,7 +773,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
             const py = y * cellSize;
 
             if (type === 'RACK') {
-              ctx.fillStyle = '#475569';
+              ctx.fillStyle = isDarkMode ? '#334155' : '#475569';
               ctx.fillRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
               ctx.fillStyle = '#D97706';
               ctx.fillRect(px + 3, py + 3, cellSize - 6, cellSize - 6);
@@ -598,27 +786,27 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
               ctx.strokeRect(px + 3, py + 3 + half, half, half);
               ctx.strokeRect(px + 3 + half, py + 3 + half, half, half);
             } else if (type === 'PICK_STATION') {
-              ctx.fillStyle = '#FEF3C7';
+              ctx.fillStyle = isDarkMode ? '#064E3B' : '#FEF3C7';
               ctx.fillRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
-              ctx.strokeStyle = '#D97706';
+              ctx.strokeStyle = isDarkMode ? '#10B981' : '#D97706';
               ctx.lineWidth = 2;
               ctx.strokeRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
 
-              ctx.fillStyle = '#92400E';
+              ctx.fillStyle = isDarkMode ? '#A7F3D0' : '#92400E';
               ctx.font = 'bold 9px monospace';
               ctx.fillText('PICK', px + 3, py + cellSize / 2 + 3);
             } else if (type === 'DROP_BAY') {
-              ctx.fillStyle = '#EDE9FE';
+              ctx.fillStyle = isDarkMode ? '#1E3A8A' : '#EDE9FE';
               ctx.fillRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
-              ctx.strokeStyle = '#7C3AED';
+              ctx.strokeStyle = isDarkMode ? '#3B82F6' : '#7C3AED';
               ctx.lineWidth = 2;
               ctx.strokeRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
 
-              ctx.fillStyle = '#5B21B6';
+              ctx.fillStyle = isDarkMode ? '#BFDBFE' : '#5B21B6';
               ctx.font = 'bold 9px monospace';
               ctx.fillText('PACK', px + 3, py + cellSize / 2 + 3);
             } else if (type === 'CHARGING_DOCK') {
-              ctx.fillStyle = '#1E293B';
+              ctx.fillStyle = isDarkMode ? '#1E293B' : '#1E293B';
               ctx.fillRect(px + 3, py + 3, cellSize - 6, cellSize - 6);
               ctx.strokeStyle = '#FACC15';
               ctx.lineWidth = 1.5;
@@ -630,7 +818,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
               ctx.fillText('⚡', px + cellSize / 2, py + cellSize / 2 + 4);
               ctx.textAlign = 'start';
             } else if (type === 'RECESS_BAY') {
-              ctx.fillStyle = '#DCFCE7';
+              ctx.fillStyle = isDarkMode ? '#064E3B/40' : '#DCFCE7';
               ctx.fillRect(px + 2, py + 2, cellSize - 4, cellSize - 4);
               ctx.strokeStyle = '#16A34A';
               ctx.setLineDash([3, 2]);
@@ -662,36 +850,57 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           }
         }
 
-        // Dropped Parcels
+        // Heatmap Layer
+        if (showHeatmap) {
+          for (let y = 0; y < GRID_HEIGHT; y++) {
+            for (let x = 0; x < GRID_WIDTH; x++) {
+              const val = manager.heatmap[y][x];
+              if (val > 0) {
+                const alpha = Math.min(0.65, val * 0.08);
+                ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+                ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+              }
+            }
+          }
+        }
+
+        // Dropped Parcels in 2D
         for (const dp of manager.droppedParcels) {
           const dpx = dp.x * cellSize + cellSize / 2;
           const dpy = dp.y * cellSize + cellSize / 2;
 
           ctx.save();
-          ctx.translate(dpx, dpy);
-          ctx.fillStyle = '#D97706';
-          ctx.fillRect(-7, -7, 14, 14);
+          ctx.fillStyle = '#F59E0B';
+          ctx.beginPath();
+          ctx.arc(dpx, dpy, 8, 0, Math.PI * 2);
+          ctx.fill();
           ctx.strokeStyle = '#B45309';
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(-7, -7, 14, 14);
+          ctx.lineWidth = 2;
+          ctx.stroke();
 
-          ctx.fillStyle = '#FDE047';
-          ctx.fillRect(-2, -7, 4, 14);
+          ctx.fillStyle = '#78350F';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('📦', dpx, dpy + 3);
           ctx.restore();
         }
 
-        // Planned Path Vectors
+        // Path Vectors
         if (showPathVectors) {
           for (const agent of manager.agents) {
-            if (agent.path.length > 0 && agent.state !== 'CRITICAL_FAILURE') {
-              const color = agent.priority === 'EXPRESS' ? '#CA8A04' : '#0284C7';
-              ctx.strokeStyle = color;
-              ctx.lineWidth = 1.8;
-              ctx.setLineDash([4, 3]);
+            if (agent.path.length > 1 && agent.state !== 'CRITICAL_FAILURE' && agent.state !== 'PARKED_REPAIR') {
               ctx.beginPath();
-              ctx.moveTo(agent.x * cellSize + cellSize / 2, agent.y * cellSize + cellSize / 2);
-              for (const step of agent.path) {
-                ctx.lineTo(step.x * cellSize + cellSize / 2, step.y * cellSize + cellSize / 2);
+              ctx.strokeStyle = agent.id === selectedAgent?.id ? '#2563EB' : 'rgba(100, 116, 139, 0.45)';
+              ctx.lineWidth = agent.id === selectedAgent?.id ? 3 : 1.5;
+              ctx.setLineDash([4, 4]);
+
+              const startX = agent.x * cellSize + cellSize / 2;
+              const startY = agent.y * cellSize + cellSize / 2;
+              ctx.moveTo(startX, startY);
+
+              for (let i = 1; i < agent.path.length; i++) {
+                const pt = agent.path[i];
+                ctx.lineTo(pt.x * cellSize + cellSize / 2, pt.y * cellSize + cellSize / 2);
               }
               ctx.stroke();
               ctx.setLineDash([]);
@@ -699,11 +908,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           }
         }
 
-        // Draw 2D Robots
+        // Agents in 2D
         for (const agent of manager.agents) {
           const targetX = Number.isFinite(agent.x) ? agent.x : 2;
           const targetY = Number.isFinite(agent.y) ? agent.y : 2;
-
           let prev = interpolatedAgents.current.get(agent.id) || { x: targetX, y: targetY };
           const interp = {
             x: prev.x + (targetX - prev.x) * 0.28,
@@ -711,136 +919,92 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
           };
           interpolatedAgents.current.set(agent.id, interp);
 
-          const centerX = interp.x * cellSize + cellSize / 2;
-          const centerY = interp.y * cellSize + cellSize / 2;
-          const radius = cellSize * 0.42;
+          const cx = interp.x * cellSize + cellSize / 2;
+          const cy = interp.y * cellSize + cellSize / 2;
 
-          // Tow Cable
+          // Communication & Collision Warning Ring
+          if (showCommRings && agent.state !== 'CRITICAL_FAILURE' && agent.state !== 'PARKED_REPAIR') {
+            const isHazard = Boolean(agent.isNearHazard);
+            const rPhase = (now % 1600) / 1600;
+            const rPhase2 = ((now + 800) % 1600) / 1600;
+            const r1 = 16 + rPhase * 18;
+            const r2 = 16 + rPhase2 * 18;
+
+            const ringColor = isHazard 
+              ? 'rgba(220, 80, 80, 0.55)'
+              : 'rgba(56, 189, 248, 0.4)';
+
+            ctx.strokeStyle = ringColor;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r1, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, r2, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          // Mechanical Tow Rope
           if (agent.towedAgentId) {
             const towedRobot = manager.agents.find(a => a.id === agent.towedAgentId);
             if (towedRobot) {
-              const tInterp = interpolatedAgents.current.get(towedRobot.id) || { x: towedRobot.x, y: towedRobot.y };
-              const tx = tInterp.x * cellSize + cellSize / 2;
-              const ty = tInterp.y * cellSize + cellSize / 2;
+              const towedInterp = interpolatedAgents.current.get(towedRobot.id) || { x: towedRobot.x, y: towedRobot.y };
+              const tX = towedInterp.x * cellSize + cellSize / 2;
+              const tY = towedInterp.y * cellSize + cellSize / 2;
+
               ctx.save();
               ctx.strokeStyle = '#F97316';
-              ctx.lineWidth = 2.5;
-              ctx.setLineDash([4, 3]);
+              ctx.lineWidth = 3;
+              ctx.setLineDash([5, 4]);
               ctx.beginPath();
-              ctx.moveTo(centerX, centerY);
-              ctx.lineTo(tx, ty);
+              ctx.moveTo(cx, cy);
+              ctx.lineTo(tX, tY);
               ctx.stroke();
               ctx.restore();
             }
           }
 
-          // Rippling Radar Ring
-          if (showCommRings && agent.state !== 'CRITICAL_FAILURE' && agent.state !== 'PARKED_REPAIR') {
-            const rPhase = (now % 1600) / 1600;
-            const rPhase2 = ((now + 800) % 1600) / 1600;
-            const r1 = radius + 4 + rPhase * 18;
-            const r2 = radius + 4 + rPhase2 * 18;
-
-            const isHazard = Boolean(agent.isNearHazard);
-            const ringColor = isHazard ? 'rgba(220, 80, 80, 0.42)' : 'rgba(56, 189, 248, 0.35)';
-
-            ctx.strokeStyle = ringColor;
-            ctx.lineWidth = 1.4;
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, r1, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, r2, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-
-          ctx.save();
-          ctx.translate(centerX, centerY);
-          ctx.rotate(agent.heading);
-
-          const chW = radius * 1.5;
-          const chH = radius * 1.3;
-
-          // 2 Drive Wheels
-          ctx.fillStyle = '#0F172A';
-          ctx.fillRect(-chW * 0.5 - 3.5, -chH * 0.42, 4, chH * 0.84);
-          ctx.fillRect(chW * 0.5 - 0.5, -chH * 0.42, 4, chH * 0.84);
-
+          // Robot Body
+          const radius = 10;
           const desat = agent.desaturation !== undefined ? agent.desaturation : (agent.state === 'CRITICAL_FAILURE' ? 1.0 : 0.0);
-          const chassisBg = desat > 0.8 ? '#CBD5E1' : '#FFFFFF';
-          const rimColor = desat > 0.8 ? '#64748B' : (agent.state === 'CARRYING_TASK' ? '#10B981' : '#0284C7');
 
-          ctx.fillStyle = chassisBg;
-          ctx.strokeStyle = rimColor;
-          ctx.lineWidth = 2.2;
-          ctx.beginPath();
-          ctx.roundRect(-chW * 0.5, -chH * 0.5, chW, chH, 5);
-          ctx.fill();
-          ctx.stroke();
+          let baseFill = isDarkMode ? '#F8FAFC' : '#FFFFFF';
+          let borderStroke = '#0284C7';
 
-          // Heading Pointer
-          ctx.fillStyle = desat > 0.8 ? '#94A3B8' : '#0284C7';
-          ctx.beginPath();
-          ctx.moveTo(chW * 0.35, 0);
-          ctx.lineTo(chW * 0.15, -3);
-          ctx.lineTo(chW * 0.15, 3);
-          ctx.closePath();
-          ctx.fill();
-
-          // Parcel Crate on Top if Carrying
-          if (agent.state === 'CARRYING_TASK') {
-            const crW = chW * 0.65;
-            const crH = chH * 0.7;
-
-            ctx.fillStyle = '#D97706';
-            ctx.fillRect(-crW * 0.5, -crH * 0.5, crW, crH);
-            ctx.strokeStyle = '#B45309';
-            ctx.lineWidth = 1.2;
-            ctx.strokeRect(-crW * 0.5, -crH * 0.5, crW, crH);
-
-            ctx.fillStyle = '#FDE047';
-            ctx.fillRect(-crW * 0.15, -crH * 0.5, crW * 0.3, crH);
+          if (desat > 0.8) {
+            baseFill = '#94A3B8';
+            borderStroke = '#64748B';
+          } else if (agent.state === 'CARRYING_TASK') {
+            baseFill = '#10B981';
+            borderStroke = '#047857';
           }
 
-          ctx.restore();
-
-          // Floating Unit ID Badge
-          ctx.save();
-          ctx.translate(centerX, centerY);
-          const unitName = agent.id.replace('AMR-', 'A').replace('FUS-HW-01', 'HW1');
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-          ctx.strokeStyle = '#CBD5E1';
-          ctx.lineWidth = 1;
+          ctx.fillStyle = baseFill;
           ctx.beginPath();
-          ctx.roundRect(-10, radius + 3, 20, 11, 4);
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
           ctx.fill();
+
+          ctx.strokeStyle = borderStroke;
+          ctx.lineWidth = 2.5;
           ctx.stroke();
 
-          ctx.fillStyle = desat > 0.8 ? '#64748B' : '#0F172A';
+          // Single Sensor Eye
+          const eyeX = cx + Math.cos(agent.heading ?? 0) * 6;
+          const eyeY = cy + Math.sin(agent.heading ?? 0) * 6;
+          ctx.fillStyle = desat > 0.8 ? '#475569' : '#0284C7';
+          ctx.beginPath();
+          ctx.arc(eyeX, eyeY, 2.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Label
+          const uName = agent.id.replace('AMR-', 'A').replace('FUS-HW-01', 'HW1');
+          ctx.fillStyle = isDarkMode ? '#F8FAFC' : '#0F172A';
           ctx.font = 'bold 8px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(unitName, 0, radius + 11);
-
-          if (agent.state === 'PARKED_REPAIR') {
-            const secLeft = agent.repairCountdownSec !== undefined ? agent.repairCountdownSec.toFixed(1) : '5.0';
-            ctx.fillStyle = '#7C3AED';
-            ctx.font = 'bold 8px monospace';
-            ctx.fillText(`⚡ ${secLeft}s`, 0, -radius - 7);
-          }
-          ctx.restore();
+          ctx.fillText(uName, cx, cy - radius - 3);
+          ctx.textAlign = 'start';
         }
-
-        // Hover reticle
-        if (hoverCoord) {
-          ctx.strokeStyle = toolMode === 'OBSTACLE' ? 'rgba(220, 38, 38, 0.7)' : 'rgba(2, 132, 199, 0.6)';
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(hoverCoord.x * cellSize + 1, hoverCoord.y * cellSize + 1, cellSize - 2, cellSize - 2);
-        }
-
-        // 2D Tactical View Mode Watermark Tag
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText('2D TACTICAL ORTHOGRAPHIC MAP', 20, height - 20);
       }
 
       animationFrameId = requestAnimationFrame(render);
@@ -848,9 +1012,9 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
 
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [manager, selectedAgent, selectedCell, showHeatmap, showPathVectors, showCommRings, hoverCoord, toolMode, viewMode]);
+  }, [manager, viewMode, showHeatmap, showPathVectors, showCommRings, selectedAgent, isDarkMode, zoom3D]);
 
-  // Click Handler based on Tool Mode (Handles both 2D and 3D coordinate un-projection)
+  // Click handler with dynamic zoom un-projection
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -865,10 +1029,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     let gridY = 0;
 
     if (viewMode === '3D') {
-      const isoOriginX = canvas.width * 0.5;
-      const isoOriginY = canvas.height * 0.16;
-      const isoTileW = canvas.width / 34;
+      const isoTileW = (canvas.width / 34) * zoom3D;
       const isoTileH = isoTileW * 0.52;
+      const isoOriginX = canvas.width * 0.5;
+      const isoOriginY = canvas.height * 0.22 - (zoom3D - 1.0) * (canvas.height * 0.12);
 
       const dx = clientX - isoOriginX;
       const dy = clientY - isoOriginY;
@@ -910,6 +1074,7 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     }
   };
 
+  // Mouse Move with dynamic zoom un-projection
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -924,10 +1089,10 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
     let gridY = 0;
 
     if (viewMode === '3D') {
-      const isoOriginX = canvas.width * 0.5;
-      const isoOriginY = canvas.height * 0.16;
-      const isoTileW = canvas.width / 34;
+      const isoTileW = (canvas.width / 34) * zoom3D;
       const isoTileH = isoTileW * 0.52;
+      const isoOriginX = canvas.width * 0.5;
+      const isoOriginY = canvas.height * 0.22 - (zoom3D - 1.0) * (canvas.height * 0.12);
 
       const dx = clientX - isoOriginX;
       const dy = clientY - isoOriginY;
@@ -965,71 +1130,51 @@ export const SimulationCanvas: React.FC<SimulationCanvasProps> = ({
         onClick={handleCanvasClick}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoverCoord(null)}
-        className={`w-full h-auto max-h-[82vh] rounded-[28px] border border-slate-200/80 shadow-[0_12px_40px_rgba(0,0,0,0.04)] object-contain bg-white ${getCursorClass()}`}
+        onWheel={handleWheel}
+        className={`w-full h-auto max-h-[82vh] rounded-[28px] border shadow-[0_12px_40px_rgba(0,0,0,0.06)] object-contain transition-colors duration-200 ${
+          isDarkMode ? 'bg-[#0B0F19] border-slate-800' : 'bg-white border-slate-200/80'
+        } ${getCursorClass()}`}
       />
 
-      {/* VIEWPORT MODE FLOATING PILL (Allows instant 2D / 3D toggle right from canvas) */}
-      <div className="absolute top-4 left-6 z-20 flex items-center bg-white/95 p-1 rounded-full border border-slate-200 shadow-sm backdrop-blur-md">
-        <button
-          onClick={() => viewMode !== '2D' && onToggleViewMode && onToggleViewMode()}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-            viewMode === '2D'
-              ? 'bg-slate-900 text-white shadow-xs font-bold'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-          title="Switch to 2D Tactical Plan View"
-        >
-          <Layers className="w-3.5 h-3.5" />
-          <span>2D Tactical</span>
-        </button>
-
-        <button
-          onClick={() => viewMode !== '3D' && onToggleViewMode && onToggleViewMode()}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-            viewMode === '3D'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs font-bold'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-          title="Switch to 3D Isometric View (SimTool style)"
-        >
-          <Box className="w-3.5 h-3.5" />
-          <span>3D Isometric</span>
-        </button>
-      </div>
-
-      {/* COMPACT FLOATING PAUSE TOAST WITH 'X' CLOSE BUTTON - ZERO SHARP EDGES */}
-      {!isRunning && showPauseToast && (
-        <div className="absolute top-4 right-6 z-20 flex items-center gap-3 px-5 py-3 rounded-full bg-white/95 border border-slate-200/80 shadow-[0_10px_30px_rgba(0,0,0,0.06)] backdrop-blur-md transition-all">
-          <div className="w-8 h-8 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-            <Pause className="w-4 h-4 fill-current" />
-          </div>
-
-          <div className="flex flex-col">
-            <span className="text-xs font-bold font-mono text-slate-800">
-              SWARM IN STANDBY
-            </span>
-            <span className="text-[10px] text-slate-500 font-sans">
-              Robots waiting for start signal
-            </span>
-          </div>
-
+      {/* 3D ZOOM INTERACTIVE CONTROLLER (Only in 3D Mode, Clean Glassmorphism) */}
+      {viewMode === '3D' && (
+        <div className={`absolute bottom-5 right-6 z-20 flex items-center p-1 rounded-full border shadow-lg backdrop-blur-md transition-all ${
+          isDarkMode 
+            ? 'bg-slate-900/90 border-slate-700 text-slate-100 shadow-[0_4px_20px_rgba(0,0,0,0.4)]' 
+            : 'bg-white/95 border-slate-200 text-slate-800'
+        }`}>
           <button
-            onClick={onTogglePlay}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs shadow-md shadow-emerald-600/20 transition-all hover:scale-105 active:scale-95 cursor-pointer ml-1"
+            onClick={() => setZoom3D(z => Math.max(0.6, +(z - 0.15).toFixed(2)))}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'
+            }`}
+            title="Zoom Out 3D Warehouse"
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>START</span>
+            <ZoomOut className="w-4 h-4" />
           </button>
 
           <button
-            onClick={() => setShowPauseToast(false)}
-            className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors ml-1 cursor-pointer"
-            title="Dismiss notification"
+            onClick={() => setZoom3D(1.0)}
+            className={`px-2.5 py-1 text-xs font-mono font-bold rounded-full transition-all cursor-pointer ${
+              isDarkMode ? 'hover:bg-slate-800 text-sky-400' : 'hover:bg-slate-100 text-blue-600'
+            }`}
+            title="Reset to 100% Zoom"
           >
-            <X className="w-4 h-4" />
+            {Math.round(zoom3D * 100)}%
+          </button>
+
+          <button
+            onClick={() => setZoom3D(z => Math.min(2.2, +(z + 0.15).toFixed(2)))}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              isDarkMode ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-100 text-slate-700'
+            }`}
+            title="Zoom In 3D Warehouse"
+          >
+            <ZoomIn className="w-4 h-4" />
           </button>
         </div>
       )}
+
     </div>
   );
 };

@@ -3,10 +3,20 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-width: 0;
+    min-height: 100%;
+    margin: 0;
+  }
+
   body {
-    background-color: #EFF3F8;
-    color: #1E293B;
+    background-color: #090D16;
+    color: #F1F5F9;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
   }
 }
 
@@ -23,7 +33,7 @@
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #64748B;
 }
 
 /* Ultra-clean soft floating card utilities (Clinexa Inspiration) */
